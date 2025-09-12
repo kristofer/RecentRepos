@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recent Repos - Activity Timeline</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Recent Repos</h1>
+            <p>A timeline of your GitHub activity</p>
+            <div id="status-indicator" class="status-indicator"></div>
+            <button id="refresh-btn" class="refresh-button">Refresh Activity</button>
+        </header>
+
+        <main>
+            <div class="tabs">
+                <button class="tab-btn active" id="tab-activity">Recent Events</button>
+                <button class="tab-btn" id="tab-commits">6-Month Commits</button>
+            </div>
+            <div id="loading" class="loading">Loading activity...</div>
+            <div id="error" class="error" style="display: none;"></div>
+            <div id="activity-timeline" class="timeline tab-content active">
+                <!-- Activity items will be populated here -->
+            </div>
+            <div id="commits-timeline" class="timeline tab-content" style="display:none">
+                <!-- Commits grouped by repo will be populated here -->
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

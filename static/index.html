@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recent Repos - Activity Timeline</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Recent Repos</h1>
+            <p>A timeline of your GitHub activity</p>
+            <div id="status-indicator" class="status-indicator"></div>
+            <button id="refresh-btn" class="refresh-button">Refresh Activity</button>
+        </header>
+
+        <main>
+            <div id="loading" class="loading">Loading activity...</div>
+            <div id="error" class="error" style="display: none;"></div>
+            
+            <div id="activity-timeline" class="timeline">
+                <!-- Activity items will be populated here -->
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

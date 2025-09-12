@@ -1,0 +1,230 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    background-color: #0d1117;
+    color: #e6edf3;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding: 20px 0;
+    border-bottom: 1px solid #21262d;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    color: #58a6ff;
+}
+
+header p {
+    font-size: 1.1rem;
+    color: #8b949e;
+    margin-bottom: 20px;
+}
+
+.refresh-button {
+    background-color: #238636;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.refresh-button:hover {
+    background-color: #2ea043;
+}
+
+.refresh-button:disabled {
+    background-color: #484f58;
+    cursor: not-allowed;
+}
+
+.status-indicator {
+    font-size: 0.875rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    display: inline-block;
+}
+
+.status-indicator.sample-mode {
+    background-color: #f85149;
+    color: white;
+}
+
+.status-indicator.github-mode {
+    background-color: #238636;
+    color: white;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    font-size: 1.1rem;
+    color: #8b949e;
+}
+
+.error {
+    background-color: #da3633;
+    color: white;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.timeline {
+    display: grid;
+    gap: 16px;
+}
+
+.activity-item {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    transition: border-color 0.2s;
+}
+
+.activity-item:hover {
+    border-color: #58a6ff;
+}
+
+.activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.activity-date {
+    font-size: 0.875rem;
+    color: #8b949e;
+}
+
+.activity-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.activity-type.commit {
+    background-color: #238636;
+    color: white;
+}
+
+.activity-type.pull_request {
+    background-color: #1f6feb;
+    color: white;
+}
+
+.activity-type.issue {
+    background-color: #da3633;
+    color: white;
+}
+
+.activity-type.review {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+.repository-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #58a6ff;
+    text-decoration: none;
+    margin-bottom: 4px;
+    display: block;
+}
+
+.repository-name:hover {
+    text-decoration: underline;
+}
+
+.activity-count {
+    font-size: 0.875rem;
+    color: #8b949e;
+}
+
+.activity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+}
+
+/* Contribution graph style timeline */
+.contributions-view {
+    margin-top: 20px;
+}
+
+.contributions-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.contribution-day {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background-color: #161b22;
+    border: 1px solid #30363d;
+}
+
+.contribution-day.level-1 {
+    background-color: #0e4429;
+}
+
+.contribution-day.level-2 {
+    background-color: #006d32;
+}
+
+.contribution-day.level-3 {
+    background-color: #26a641;
+}
+
+.contribution-day.level-4 {
+    background-color: #39d353;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    header h1 {
+        font-size: 2rem;
+    }
+    
+    .activity-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .activity-grid {
+        grid-template-columns: 1fr;
+    }
+}

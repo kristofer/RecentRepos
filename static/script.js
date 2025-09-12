@@ -74,12 +74,12 @@ class RecentRepos {
 
         let content = this.commitsData.map(repoGroup => `
             <div class="activity-item">
-                <div class="repository-name">${repoGroup.repository}</div>
+                <a href="${repoGroup.commits[0].url}" class="repository-name" target="_blank">${repoGroup.repository}</a>
                 <div class="commits-list">
                     ${repoGroup.commits.map(commit => `
                         <div class="commit-entry">
                             <span class="activity-date">${this.formatDate(commit.date)}</span>
-                            <a href="${commit.url}" target="_blank">${commit.count} commit${commit.count > 1 ? 's' : ''}</a>
+                            <span>${commit.count} commit${commit.count > 1 ? 's' : ''}</span>
                         </div>
                     `).join('')}
                 </div>

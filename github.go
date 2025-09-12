@@ -13,21 +13,33 @@ type GitHubService struct {
 }
 
 type GitHubEvent struct {
-	Type      string    `json:"type"`
-	Repo      GitHubRepo `json:"repo"`
-	CreatedAt time.Time `json:"created_at"`
+	Type      string      `json:"type"`
+	Repo      GitHubRepo  `json:"repo"`
+	CreatedAt time.Time   `json:"created_at"`
 	Payload   interface{} `json:"payload"`
 }
 
 type GitHubRepo struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	URL      string `json:"url"`
+	HTMLURL  string `json:"html_url"`
 }
 
 type GitHubCommit struct {
-	SHA     string `json:"sha"`
-	Message string `json:"message"`
-	URL     string `json:"html_url"`
+	SHA    string           `json:"sha"`
+	Commit GitHubCommitData `json:"commit"`
+	URL    string           `json:"html_url"`
+}
+
+type GitHubCommitData struct {
+	Message string                `json:"message"`
+	Author  GitHubCommitAuthor    `json:"author"`
+}
+
+type GitHubCommitAuthor struct {
+	Name string    `json:"name"`
+	Date time.Time `json:"date"`
 }
 
 func NewGitHubService() *GitHubService {
@@ -41,32 +53,33 @@ func (g *GitHubService) FetchUserActivity(username string) ([]GitHubActivity, er
 		return g.getSampleData(), nil
 	}
 
-	url := fmt.Sprintf("https://api.github.com/users/%s/events", username)
-	req, err := http.NewRequest("GET", url, nil)
+	// First fetch user repos
+	repos, err := g.fetchUserRepos(username)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch user repos: %w", err)
 	}
 
-	req.Header.Set("Authorization", "token "+g.Token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	// Then fetch commits for each repo
+	var allActivities []GitHubActivity
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
-	}
-
-	var events []GitHubEvent
-	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return nil, err
+	for _, repo := range repos {
+		commits, err := g.fetchRepoCommits(username, repo.Name, sixMonthsAgo)
+		if err != nil {
+			// Log error but continue with other repos
+			fmt.Printf("Warning: Failed to fetch commits for %s: %v\n", repo.Name, err)
+			continue
+		}
+		allActivities = append(allActivities, commits...)
 	}
 
-	return g.convertEventsToActivity(events), nil
+	// Also fetch recent events for other activity types
+	events, err := g.fetchRecentEvents(username)
+	if err == nil {
+		allActivities = append(allActivities, g.convertEventsToActivity(events)...)
+	}
+
+	return allActivities, nil
 }
 
 func (g *GitHubService) convertEventsToActivity(events []GitHubEvent) []GitHubActivity {
@@ -92,6 +105,173 @@ func (g *GitHubService) convertEventsToActivity(events []GitHubEvent) []GitHubAc
 	var activities []GitHubActivity
 	for _, activity := range activityMap {
 		activities = append(activities, *activity)
+	}
+
+	return activities
+}
+
+func (g *GitHubService) fetchUserRepos(username string) ([]GitHubRepo, error) {
+	var allRepos []GitHubRepo
+	page := 1
+	perPage := 100
+
+	for {
+		url := fmt.Sprintf("https://api.github.com/users/%s/repos?type=all&sort=pushed&per_page=%d&page=%d", username, perPage, page)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Authorization", "token "+g.Token)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
+		}
+
+		var repos []GitHubRepo
+		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+			return nil, err
+		}
+
+		if len(repos) == 0 {
+			break
+		}
+
+		allRepos = append(allRepos, repos...)
+		
+		// Check if we got less than perPage, meaning we've reached the end
+		if len(repos) < perPage {
+			break
+		}
+		
+		page++
+	}
+
+	return allRepos, nil
+}
+
+func (g *GitHubService) fetchRepoCommits(username, repoName string, since time.Time) ([]GitHubActivity, error) {
+	var allCommits []GitHubCommit
+	page := 1
+	perPage := 100
+
+	for {
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/commits?author=%s&since=%s&per_page=%d&page=%d", 
+			username, repoName, username, since.Format(time.RFC3339), perPage, page)
+		
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Authorization", "token "+g.Token)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 409 {
+			// Repository is empty, skip it
+			return []GitHubActivity{}, nil
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("GitHub API returned status: %d for repo %s", resp.StatusCode, repoName)
+		}
+
+		var commits []GitHubCommit
+		if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
+			return nil, err
+		}
+
+		if len(commits) == 0 {
+			break
+		}
+
+		allCommits = append(allCommits, commits...)
+		
+		// Check if we got less than perPage, meaning we've reached the end
+		if len(commits) < perPage {
+			break
+		}
+		
+		page++
+	}
+
+	return g.convertCommitsToActivity(allCommits, repoName, username), nil
+}
+
+func (g *GitHubService) fetchRecentEvents(username string) ([]GitHubEvent, error) {
+	url := fmt.Sprintf("https://api.github.com/users/%s/events", username)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "token "+g.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
+	}
+
+	var events []GitHubEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, err
+	}
+
+	// Filter events to last 6 months
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
+	var recentEvents []GitHubEvent
+	for _, event := range events {
+		if event.CreatedAt.After(sixMonthsAgo) {
+			recentEvents = append(recentEvents, event)
+		}
+	}
+	return recentEvents, nil
+}
+
+func (g *GitHubService) convertCommitsToActivity(commits []GitHubCommit, repoName, username string) []GitHubActivity {
+	// Group commits by date
+	commitsByDate := make(map[string]int)
+	commitDates := make(map[string]time.Time)
+	
+	for _, commit := range commits {
+		dateStr := commit.Commit.Author.Date.Format("2006-01-02")
+		commitsByDate[dateStr]++
+		if _, exists := commitDates[dateStr]; !exists {
+			commitDates[dateStr] = commit.Commit.Author.Date
+		}
+	}
+
+	var activities []GitHubActivity
+	for dateStr, count := range commitsByDate {
+		activities = append(activities, GitHubActivity{
+			Date:         commitDates[dateStr],
+			Repository:   fmt.Sprintf("%s/%s", username, repoName),
+			ActivityType: "commit",
+			Count:        count,
+			URL:          fmt.Sprintf("https://github.com/%s/%s", username, repoName),
+		})
 	}
 
 	return activities

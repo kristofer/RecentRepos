@@ -1,6 +1,10 @@
 class RecentRepos {
     constructor() {
         this.activities = [];
+        this.commitsData = [];
+        this.currentCommitsPage = 1;
+        this.commitsPerPage = 100;
+        this.commitsPagination = null;
         this.init();
     }
 
@@ -8,11 +12,87 @@ class RecentRepos {
         this.loadStatus();
         this.loadActivity();
         this.setupEventListeners();
+        this.setupTabs();
     }
 
     setupEventListeners() {
         const refreshBtn = document.getElementById('refresh-btn');
         refreshBtn.addEventListener('click', () => this.refreshActivity());
+    }
+
+    setupTabs() {
+        const tabActivity = document.getElementById('tab-activity');
+        const tabCommits = document.getElementById('tab-commits');
+        const activityTimeline = document.getElementById('activity-timeline');
+        const commitsTimeline = document.getElementById('commits-timeline');
+
+        tabActivity.addEventListener('click', () => {
+            tabActivity.classList.add('active');
+            tabCommits.classList.remove('active');
+            activityTimeline.style.display = '';
+            activityTimeline.classList.add('active');
+            commitsTimeline.style.display = 'none';
+            commitsTimeline.classList.remove('active');
+        });
+
+        tabCommits.addEventListener('click', () => {
+            tabCommits.classList.add('active');
+            tabActivity.classList.remove('active');
+            commitsTimeline.style.display = '';
+            commitsTimeline.classList.add('active');
+            activityTimeline.style.display = 'none';
+            activityTimeline.classList.remove('active');
+            this.loadCommits(1);
+        });
+    }
+    async loadCommits(page = 1) {
+        const commitsTimeline = document.getElementById('commits-timeline');
+        if (page === 1) {
+            commitsTimeline.innerHTML = '<div class="loading">Loading commits...</div>';
+        }
+        try {
+            const response = await fetch(`/api/commits?page=${page}&limit=${this.commitsPerPage}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const result = await response.json();
+            this.commitsData = result.data || [];
+            this.commitsPagination = result.pagination || null;
+            this.currentCommitsPage = page;
+            this.renderCommits();
+        } catch (error) {
+            commitsTimeline.innerHTML = `<div class="error">Failed to load commits: ${error.message}</div>`;
+        }
+    }
+
+    renderCommits() {
+        const commitsTimeline = document.getElementById('commits-timeline');
+        if (!this.commitsData || this.commitsData.length === 0) {
+            commitsTimeline.innerHTML = '<div class="activity-item">No commit data available.</div>';
+            return;
+        }
+
+        let content = this.commitsData.map(repoGroup => `
+            <div class="activity-item">
+                <div class="repository-name">${repoGroup.repository}</div>
+                <div class="commits-list">
+                    ${repoGroup.commits.map(commit => `
+                        <div class="commit-entry">
+                            <span class="activity-date">${this.formatDate(commit.date)}</span>
+                            <a href="${commit.url}" target="_blank">${commit.count} commit${commit.count > 1 ? 's' : ''}</a>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+
+        // Add pagination controls if needed
+        if (this.commitsPagination && this.commitsPagination.total_pages > 1) {
+            content += this.renderPaginationControls();
+        }
+
+        commitsTimeline.innerHTML = content;
+        this.setupPaginationEventListeners();
     }
 
     async loadStatus() {
@@ -148,6 +228,43 @@ class RecentRepos {
         setTimeout(() => {
             errorDiv.style.display = 'none';
         }, 5000);
+    }
+
+    renderPaginationControls() {
+        const p = this.commitsPagination;
+        let paginationHtml = '<div class="pagination">';
+        
+        // Previous button
+        if (p.has_prev) {
+            paginationHtml += `<button class="page-btn" data-page="${p.page - 1}">← Previous</button>`;
+        } else {
+            paginationHtml += `<button class="page-btn disabled">← Previous</button>`;
+        }
+        
+        // Page info
+        paginationHtml += `<span class="page-info">Page ${p.page} of ${p.total_pages} (${p.total} repositories)</span>`;
+        
+        // Next button
+        if (p.has_next) {
+            paginationHtml += `<button class="page-btn" data-page="${p.page + 1}">Next →</button>`;
+        } else {
+            paginationHtml += `<button class="page-btn disabled">Next →</button>`;
+        }
+        
+        paginationHtml += '</div>';
+        return paginationHtml;
+    }
+
+    setupPaginationEventListeners() {
+        const pageButtons = document.querySelectorAll('.page-btn:not(.disabled)');
+        pageButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const page = parseInt(e.target.getAttribute('data-page'));
+                if (page && page !== this.currentCommitsPage) {
+                    this.loadCommits(page);
+                }
+            });
+        });
     }
 }
 

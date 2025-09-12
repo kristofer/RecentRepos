@@ -1,3 +1,87 @@
+/* Tabs styles */
+.tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    justify-content: flex-start;
+}
+.tab-btn {
+    background: #21262d;
+    color: #8b949e;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px 8px 0 0;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.tab-btn.active {
+    background: #161b22;
+    color: #58a6ff;
+    font-weight: bold;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+.commits-list {
+    margin-top: 10px;
+}
+.commit-entry {
+    padding: 6px 0;
+    border-bottom: 1px solid #21262d;
+    font-size: 0.95rem;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.commit-entry:last-child {
+    border-bottom: none;
+}
+
+/* Pagination styles */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
+    padding: 16px;
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+}
+
+.page-btn {
+    background-color: #21262d;
+    color: #58a6ff;
+    border: 1px solid #30363d;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.page-btn:hover:not(.disabled) {
+    background-color: #30363d;
+    border-color: #58a6ff;
+}
+
+.page-btn.disabled {
+    background-color: #161b22;
+    color: #484f58;
+    border-color: #21262d;
+    cursor: not-allowed;
+}
+
+.page-info {
+    color: #8b949e;
+    font-size: 14px;
+    font-weight: 500;
+}
 * {
     margin: 0;
     padding: 0;

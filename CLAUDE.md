@@ -47,7 +47,7 @@ Indexed on date and repository for query performance.
 
 - `GET /`: Main application page
 - `GET /api/activity`: Recent activity timeline (last 100 items)
-- `GET /api/commits`: 6-month commit history grouped by repository
+- `GET /api/commits?page=N&limit=M`: 6-month commit history grouped by repository with pagination
 - `POST /api/refresh`: Refresh activity data from GitHub API
 - `GET /api/status`: Application status and configuration
 - `GET /static/*`: Static file serving
@@ -64,8 +64,23 @@ The application tracks: commits, pull_requests, issues, reviews, repository even
 
 ## Development Notes
 
-- Uses standard library HTTP server (no external web framework like Gin)
+- Uses standard library HTTP server (no external web framework)
 - SQLite database is created automatically on first run
 - Sample data mode available when no GitHub token is configured
-- Frontend uses vanilla JavaScript with tab-based navigation
+- Frontend uses vanilla JavaScript with tab-based navigation and pagination
 - All database queries use parameterized statements for security
+
+### GitHub API Integration
+
+- Comprehensive commit fetching: Retrieves all repositories, then fetches commits from each repo
+- Pagination support: Both GitHub API calls and frontend UI support pagination
+- 6-month window: Fetches commits from last 6 months using GitHub's `since` parameter
+- Error handling: Graceful handling of empty repositories and API rate limits
+- Fallback data: Uses sample data when no GitHub token is configured
+
+### Frontend Features
+
+- **Tab Navigation**: Switch between Recent Events and 6-Month Commits views  
+- **Pagination**: Navigate through large lists of repositories (100 per page default)
+- **Real-time Updates**: Refresh button fetches latest data from GitHub API
+- **GitHub-style UI**: Dark theme with consistent GitHub design patterns

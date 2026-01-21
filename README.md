@@ -7,7 +7,10 @@ A web application that displays a timeline of your GitHub activity, showing repo
 ## Features
 
 - **Timeline View**: Shows your GitHub activity in a reverse chronological timeline
+- **6-Month Commits View**: Displays commits from the last 6 months grouped by repository with pagination
+- **Project Blog View**: Blog-style listing of recent projects with PR comments for context
 - **Activity Types**: Displays commits, pull requests, issues, reviews, and other repository activities
+- **PR Comments**: Shows the last 4-5 pull request comments for each active repository
 - **Repository Links**: Click on repository names to navigate to the GitHub repository
 - **Real-time Refresh**: Fetch the latest activity data with the refresh button
 - **GitHub-like UI**: Dark theme interface resembling GitHub's contribution graph
@@ -77,8 +80,11 @@ Then open your browser to `http://localhost:8080`
 ### API Endpoints
 
 - `GET /` - Main application page
-- `GET /api/activity` - Fetch stored activity data
+- `GET /api/activity` - Fetch stored activity data (last 100 items)
+- `GET /api/commits?page=N&limit=M` - Fetch 6-month commit history grouped by repository with pagination
+- `GET /api/projects` - Fetch project blog view with PR comments
 - `POST /api/refresh` - Refresh activity data from GitHub API
+- `GET /api/status` - Application status and configuration
 - `GET /static/*` - Static assets (CSS, JS)
 
 ## Usage
@@ -86,7 +92,10 @@ Then open your browser to `http://localhost:8080`
 1. Start the application
 2. Open `http://localhost:8080` in your browser
 3. Click "Refresh Activity" to fetch your GitHub activity
-4. Browse your timeline of repository activity
+4. Browse your timeline using three different views:
+   - **Recent Events**: See all activity types in chronological order
+   - **6-Month Commits**: View commits grouped by repository from the last 6 months
+   - **Project Blog**: See a blog-style view with recent projects and their PR comments
 
 The application will show sample data if no GitHub token is configured, or fetch real data from the GitHub API if properly configured.
 
@@ -108,8 +117,9 @@ The application will show sample data if no GitHub token is configured, or fetch
 
 ### Database Schema
 
-The application uses SQLite with a simple schema:
+The application uses SQLite with two tables:
 
+**github_activity table:**
 ```sql
 CREATE TABLE github_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +131,24 @@ CREATE TABLE github_activity (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+**pr_comments table:**
+```sql
+CREATE TABLE pr_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repository TEXT NOT NULL,
+    pr_number INTEGER NOT NULL,
+    pr_title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    body TEXT,
+    created_at TEXT NOT NULL,
+    pr_url TEXT,
+    comment_url TEXT,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Both tables include indexes for optimal query performance.
 
 ## License
 

@@ -405,8 +405,13 @@ func (g *GitHubService) FetchPRComments(username string) ([]PRComment, error) {
 			continue
 		}
 
-		// For each PR, fetch comments
-		for _, pr := range prs {
+		// For each PR, fetch comments (limit to first 5 PRs)
+		prLimit := len(prs)
+		if prLimit > 5 {
+			prLimit = 5
+		}
+		for i := 0; i < prLimit; i++ {
+			pr := prs[i]
 			if pr.UpdatedAt.Before(sixMonthsAgo) {
 				continue
 			}
@@ -430,11 +435,6 @@ func (g *GitHubService) FetchPRComments(username string) ([]PRComment, error) {
 						})
 					}
 				}
-			}
-
-			// Limit to prevent excessive API calls - take first 5 PRs per repo
-			if len(prs) > 5 {
-				break
 			}
 		}
 	}

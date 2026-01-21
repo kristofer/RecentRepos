@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -296,7 +297,7 @@ func (app *App) fetchGitHubActivity() error {
 		fmt.Printf("Warning: Failed to fetch PR comments: %v\n", err)
 	} else {
 		// Clear old PR comments
-		_, err = app.DB.Exec("DELETE FROM pr_comments WHERE created_at >= date('now', '-180 days')")
+		_, err = app.DB.Exec("DELETE FROM pr_comments WHERE created_at < date('now', '-180 days')")
 		if err != nil {
 			fmt.Printf("Warning: Failed to clear old PR comments: %v\n", err)
 		}
@@ -372,10 +373,7 @@ func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
 		// Split activity types
 		var activityTypes []string
 		if activityTypesStr != "" {
-			activityTypes = make([]string, 0)
-			for _, t := range splitString(activityTypesStr, ",") {
-				activityTypes = append(activityTypes, t)
-			}
+			activityTypes = strings.Split(activityTypesStr, ",")
 		}
 
 		// Get recent PR comments for this repo (last 5)
@@ -422,41 +420,18 @@ func (app *App) getPRCommentsForRepo(repo string, limit int) ([]PRComment, error
 		if err != nil {
 			return nil, err
 		}
-		comment.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		parsedTime, err := time.Parse(time.RFC3339, createdAtStr)
+		if err != nil {
+			// Log error and use current time as fallback
+			fmt.Printf("Warning: Failed to parse comment timestamp %s: %v\n", createdAtStr, err)
+			comment.CreatedAt = time.Now()
+		} else {
+			comment.CreatedAt = parsedTime
+		}
 		comments = append(comments, comment)
 	}
 
 	return comments, nil
-}
-
-func splitString(s string, sep string) []string {
-	if s == "" {
-		return []string{}
-	}
-	parts := make([]string, 0)
-	for _, part := range splitByRune(s, rune(sep[0])) {
-		if part != "" {
-			parts = append(parts, part)
-		}
-	}
-	return parts
-}
-
-func splitByRune(s string, sep rune) []string {
-	var parts []string
-	var current string
-	for _, r := range s {
-		if r == sep {
-			parts = append(parts, current)
-			current = ""
-		} else {
-			current += string(r)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
 }
 
 func main() {

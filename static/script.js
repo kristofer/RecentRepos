@@ -2,6 +2,7 @@ class RecentRepos {
     constructor() {
         this.activities = [];
         this.commitsData = [];
+        this.projectsData = [];
         this.currentCommitsPage = 1;
         this.commitsPerPage = 100;
         this.commitsPagination = null;
@@ -23,26 +24,40 @@ class RecentRepos {
     setupTabs() {
         const tabActivity = document.getElementById('tab-activity');
         const tabCommits = document.getElementById('tab-commits');
+        const tabProjects = document.getElementById('tab-projects');
         const activityTimeline = document.getElementById('activity-timeline');
         const commitsTimeline = document.getElementById('commits-timeline');
+        const projectsTimeline = document.getElementById('projects-timeline');
 
         tabActivity.addEventListener('click', () => {
-            tabActivity.classList.add('active');
-            tabCommits.classList.remove('active');
-            activityTimeline.style.display = '';
-            activityTimeline.classList.add('active');
-            commitsTimeline.style.display = 'none';
-            commitsTimeline.classList.remove('active');
+            this.activateTab(tabActivity, [tabCommits, tabProjects]);
+            this.showContent(activityTimeline, [commitsTimeline, projectsTimeline]);
         });
 
         tabCommits.addEventListener('click', () => {
-            tabCommits.classList.add('active');
-            tabActivity.classList.remove('active');
-            commitsTimeline.style.display = '';
-            commitsTimeline.classList.add('active');
-            activityTimeline.style.display = 'none';
-            activityTimeline.classList.remove('active');
+            this.activateTab(tabCommits, [tabActivity, tabProjects]);
+            this.showContent(commitsTimeline, [activityTimeline, projectsTimeline]);
             this.loadCommits(1);
+        });
+
+        tabProjects.addEventListener('click', () => {
+            this.activateTab(tabProjects, [tabActivity, tabCommits]);
+            this.showContent(projectsTimeline, [activityTimeline, commitsTimeline]);
+            this.loadProjects();
+        });
+    }
+
+    activateTab(activeTab, inactiveTabs) {
+        activeTab.classList.add('active');
+        inactiveTabs.forEach(tab => tab.classList.remove('active'));
+    }
+
+    showContent(activeContent, inactiveContents) {
+        activeContent.style.display = '';
+        activeContent.classList.add('active');
+        inactiveContents.forEach(content => {
+            content.style.display = 'none';
+            content.classList.remove('active');
         });
     }
     async loadCommits(page = 1) {
@@ -93,6 +108,72 @@ class RecentRepos {
 
         commitsTimeline.innerHTML = content;
         this.setupPaginationEventListeners();
+    }
+
+    async loadProjects() {
+        const projectsTimeline = document.getElementById('projects-timeline');
+        projectsTimeline.innerHTML = '<div class="loading">Loading project blog...</div>';
+        
+        try {
+            const response = await fetch('/api/projects');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.projectsData = await response.json();
+            this.renderProjects();
+        } catch (error) {
+            projectsTimeline.innerHTML = `<div class="error">Failed to load projects: ${error.message}</div>`;
+        }
+    }
+
+    renderProjects() {
+        const projectsTimeline = document.getElementById('projects-timeline');
+        if (!this.projectsData || this.projectsData.length === 0) {
+            projectsTimeline.innerHTML = '<div class="blog-entry">No project data available.</div>';
+            return;
+        }
+
+        const content = this.projectsData.map(project => `
+            <div class="blog-entry">
+                <div class="blog-header">
+                    <a href="${project.url}" class="blog-repo-name" target="_blank">${project.repository}</a>
+                    <span class="blog-date">${this.formatDate(project.latest_date)}</span>
+                </div>
+                <div class="blog-stats">
+                    <span class="stat-item">📊 ${project.total_commits} commits</span>
+                    ${project.activity_types && project.activity_types.length > 0 ? 
+                        `<span class="stat-item">🏷️ ${project.activity_types.join(', ')}</span>` : ''}
+                </div>
+                ${project.recent_comments && project.recent_comments.length > 0 ? `
+                    <div class="blog-comments">
+                        <h4 class="comments-header">💬 Recent PR Comments</h4>
+                        ${project.recent_comments.map(comment => `
+                            <div class="comment-item">
+                                <div class="comment-header">
+                                    <a href="${comment.pr_url}" class="pr-title" target="_blank">
+                                        #${comment.pr_number} ${comment.pr_title}
+                                    </a>
+                                    <span class="comment-author">@${comment.author}</span>
+                                </div>
+                                <div class="comment-body">${this.truncateText(comment.body, 200)}</div>
+                                <div class="comment-footer">
+                                    <span class="comment-date">${this.formatDate(comment.created_at)}</span>
+                                    <a href="${comment.comment_url}" class="comment-link" target="_blank">View comment →</a>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<div class="no-comments">No recent PR comments</div>'}
+            </div>
+        `).join('');
+
+        projectsTimeline.innerHTML = content;
+    }
+
+    truncateText(text, maxLength) {
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
     }
 
     async loadStatus() {

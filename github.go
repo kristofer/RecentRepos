@@ -42,6 +42,36 @@ type GitHubCommitAuthor struct {
 	Date time.Time `json:"date"`
 }
 
+type GitHubPullRequest struct {
+	Number    int       `json:"number"`
+	Title     string    `json:"title"`
+	User      GitHubUser `json:"user"`
+	HTMLURL   string    `json:"html_url"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type GitHubIssueComment struct {
+	ID        int        `json:"id"`
+	User      GitHubUser `json:"user"`
+	Body      string     `json:"body"`
+	CreatedAt time.Time  `json:"created_at"`
+	HTMLURL   string     `json:"html_url"`
+}
+
+type GitHubUser struct {
+	Login string `json:"login"`
+}
+
+type GitHubPRReviewComment struct {
+	ID        int        `json:"id"`
+	User      GitHubUser `json:"user"`
+	Body      string     `json:"body"`
+	CreatedAt time.Time  `json:"created_at"`
+	HTMLURL   string     `json:"html_url"`
+	PullRequestURL string `json:"pull_request_url"`
+}
+
 func NewGitHubService() *GitHubService {
 	token := os.Getenv("GITHUB_TOKEN")
 	return &GitHubService{Token: token}
@@ -342,6 +372,178 @@ func (g *GitHubService) getSampleData() []GitHubActivity {
 			ActivityType: "commit",
 			Count:        8,
 			URL:          "https://github.com/kristofer/mobile-app",
+		},
+	}
+}
+
+// FetchPRComments fetches PR comments from all repositories for a user
+func (g *GitHubService) FetchPRComments(username string) ([]PRComment, error) {
+	if g.Token == "" {
+		// Return sample PR comments if no token is provided
+		return g.getSamplePRComments(), nil
+	}
+
+	var allComments []PRComment
+
+	// First fetch user repos
+	repos, err := g.fetchUserRepos(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user repos: %w", err)
+	}
+
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
+
+	// For each repo, fetch recent PRs and their comments
+	for _, repo := range repos {
+		// Extract repo name from full name (username/repo)
+		repoName := repo.Name
+		
+		// Fetch PRs for this repo
+		prs, err := g.fetchRepoPullRequests(username, repoName)
+		if err != nil {
+			fmt.Printf("Warning: Failed to fetch PRs for %s: %v\n", repoName, err)
+			continue
+		}
+
+		// For each PR, fetch comments (limit to first 5 PRs)
+		prLimit := len(prs)
+		if prLimit > 5 {
+			prLimit = 5
+		}
+		for i := 0; i < prLimit; i++ {
+			pr := prs[i]
+			if pr.UpdatedAt.Before(sixMonthsAgo) {
+				continue
+			}
+
+			// Fetch issue comments (PR comments on the conversation)
+			issueComments, err := g.fetchPRIssueComments(username, repoName, pr.Number)
+			if err != nil {
+				fmt.Printf("Warning: Failed to fetch issue comments for PR #%d: %v\n", pr.Number, err)
+			} else {
+				for _, comment := range issueComments {
+					if comment.CreatedAt.After(sixMonthsAgo) {
+						allComments = append(allComments, PRComment{
+							Repository: fmt.Sprintf("%s/%s", username, repoName),
+							PRNumber:   pr.Number,
+							PRTitle:    pr.Title,
+							Author:     comment.User.Login,
+							Body:       comment.Body,
+							CreatedAt:  comment.CreatedAt,
+							PRURL:      pr.HTMLURL,
+							CommentURL: comment.HTMLURL,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return allComments, nil
+}
+
+func (g *GitHubService) fetchRepoPullRequests(username, repoName string) ([]GitHubPullRequest, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls?state=all&sort=updated&direction=desc&per_page=10", username, repoName)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "token "+g.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return []GitHubPullRequest{}, nil // Return empty if no PRs or access denied
+	}
+
+	var prs []GitHubPullRequest
+	if err := json.NewDecoder(resp.Body).Decode(&prs); err != nil {
+		return nil, err
+	}
+
+	return prs, nil
+}
+
+func (g *GitHubService) fetchPRIssueComments(username, repoName string, prNumber int) ([]GitHubIssueComment, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%d/comments?per_page=5", username, repoName, prNumber)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "token "+g.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return []GitHubIssueComment{}, nil
+	}
+
+	var comments []GitHubIssueComment
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, err
+	}
+
+	return comments, nil
+}
+
+func (g *GitHubService) getSamplePRComments() []PRComment {
+	now := time.Now()
+	return []PRComment{
+		{
+			Repository: "kristofer/RecentRepos",
+			PRNumber:   1,
+			PRTitle:    "Add initial timeline feature",
+			Author:     "kristofer",
+			Body:       "This looks great! The timeline view is very clean and easy to read.",
+			CreatedAt:  now.AddDate(0, 0, -1),
+			PRURL:      "https://github.com/kristofer/RecentRepos/pull/1",
+			CommentURL: "https://github.com/kristofer/RecentRepos/pull/1#issuecomment-1",
+		},
+		{
+			Repository: "kristofer/RecentRepos",
+			PRNumber:   2,
+			PRTitle:    "Improve database schema",
+			Author:     "copilot",
+			Body:       "Good optimization! The indexes will help with query performance.",
+			CreatedAt:  now.AddDate(0, 0, -2),
+			PRURL:      "https://github.com/kristofer/RecentRepos/pull/2",
+			CommentURL: "https://github.com/kristofer/RecentRepos/pull/2#issuecomment-2",
+		},
+		{
+			Repository: "kristofer/example-project",
+			PRNumber:   15,
+			PRTitle:    "Fix authentication bug",
+			Author:     "kristofer",
+			Body:       "LGTM! This fixes the issue we were seeing in production.",
+			CreatedAt:  now.AddDate(0, 0, -3),
+			PRURL:      "https://github.com/kristofer/example-project/pull/15",
+			CommentURL: "https://github.com/kristofer/example-project/pull/15#issuecomment-15",
+		},
+		{
+			Repository: "kristofer/another-repo",
+			PRNumber:   8,
+			PRTitle:    "Update dependencies",
+			Author:     "dependabot",
+			Body:       "Bumps version from 1.2.3 to 1.2.4. See release notes for details.",
+			CreatedAt:  now.AddDate(0, 0, -5),
+			PRURL:      "https://github.com/kristofer/another-repo/pull/8",
+			CommentURL: "https://github.com/kristofer/another-repo/pull/8#issuecomment-8",
 		},
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -25,6 +26,27 @@ type GitHubActivity struct {
 	ActivityType string    `json:"activity_type"`
 	Count        int       `json:"count"`
 	URL          string    `json:"url"`
+}
+
+type PRComment struct {
+	ID         int       `json:"id"`
+	Repository string    `json:"repository"`
+	PRNumber   int       `json:"pr_number"`
+	PRTitle    string    `json:"pr_title"`
+	Author     string    `json:"author"`
+	Body       string    `json:"body"`
+	CreatedAt  time.Time `json:"created_at"`
+	PRURL      string    `json:"pr_url"`
+	CommentURL string    `json:"comment_url"`
+}
+
+type ProjectEntry struct {
+	Repository    string      `json:"repository"`
+	LatestDate    time.Time   `json:"latest_date"`
+	TotalCommits  int         `json:"total_commits"`
+	ActivityTypes []string    `json:"activity_types"`
+	RecentComments []PRComment `json:"recent_comments"`
+	URL           string      `json:"url"`
 }
 
 // Handler for /api/commits: returns last 6 months of commits grouped by repo, ordered by most recent commit per repo
@@ -152,6 +174,11 @@ func (app *App) initDB() error {
 		return err
 	}
 
+	// Enable connection pooling
+	app.DB.SetMaxOpenConns(25)
+	app.DB.SetMaxIdleConns(5)
+	app.DB.SetConnMaxLifetime(5 * time.Minute)
+
 	createTableSQL := `
 	CREATE TABLE IF NOT EXISTS github_activity (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +192,22 @@ func (app *App) initDB() error {
 	
 	CREATE INDEX IF NOT EXISTS idx_date ON github_activity(date);
 	CREATE INDEX IF NOT EXISTS idx_repo ON github_activity(repository);
+
+	CREATE TABLE IF NOT EXISTS pr_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		repository TEXT NOT NULL,
+		pr_number INTEGER NOT NULL,
+		pr_title TEXT NOT NULL,
+		author TEXT NOT NULL,
+		body TEXT,
+		created_at TEXT NOT NULL,
+		pr_url TEXT,
+		comment_url TEXT,
+		fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_pr_comments_repo ON pr_comments(repository);
+	CREATE INDEX IF NOT EXISTS idx_pr_comments_created ON pr_comments(created_at);
 	`
 
 	_, err = app.DB.Exec(createTableSQL)
@@ -247,6 +290,32 @@ func (app *App) fetchGitHubActivity() error {
 		}
 	}
 
+	// Fetch PR comments for repositories with recent activity
+	prComments, err := app.GitHubService.FetchPRComments(username)
+	if err != nil {
+		// Log error but don't fail the whole refresh
+		fmt.Printf("Warning: Failed to fetch PR comments: %v\n", err)
+	} else {
+		// Clear old PR comments
+		_, err = app.DB.Exec("DELETE FROM pr_comments WHERE created_at < date('now', '-180 days')")
+		if err != nil {
+			fmt.Printf("Warning: Failed to clear old PR comments: %v\n", err)
+		}
+
+		// Insert new PR comments
+		for _, comment := range prComments {
+			_, err := app.DB.Exec(`
+				INSERT OR REPLACE INTO pr_comments 
+				(repository, pr_number, pr_title, author, body, created_at, pr_url, comment_url)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`, comment.Repository, comment.PRNumber, comment.PRTitle, comment.Author, 
+				comment.Body, comment.CreatedAt.Format(time.RFC3339), comment.PRURL, comment.CommentURL)
+			if err != nil {
+				fmt.Printf("Warning: Failed to insert PR comment: %v\n", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -268,6 +337,103 @@ func (app *App) statusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
+// Handler for /api/projects: returns blog-style listing of projects with recent PR comments
+func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
+	
+	// Get all repositories with activity
+	rows, err := app.DB.Query(`
+		SELECT repository, MAX(date) as latest_date, 
+		       SUM(CASE WHEN activity_type = 'commit' THEN count ELSE 0 END) as total_commits,
+		       GROUP_CONCAT(DISTINCT activity_type) as activity_types,
+		       url
+		FROM github_activity
+		WHERE date >= ?
+		GROUP BY repository
+		ORDER BY latest_date DESC
+	`, sixMonthsAgo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var projects []ProjectEntry
+	for rows.Next() {
+		var repo, latestDateStr, activityTypesStr, url string
+		var totalCommits int
+		err := rows.Scan(&repo, &latestDateStr, &totalCommits, &activityTypesStr, &url)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		latestDate, _ := time.Parse("2006-01-02", latestDateStr)
+		
+		// Split activity types
+		var activityTypes []string
+		if activityTypesStr != "" {
+			activityTypes = strings.Split(activityTypesStr, ",")
+		}
+
+		// Get recent PR comments for this repo (last 5)
+		comments, err := app.getPRCommentsForRepo(repo, 5)
+		if err != nil {
+			// Log error but continue
+			fmt.Printf("Warning: Failed to fetch PR comments for %s: %v\n", repo, err)
+			comments = []PRComment{}
+		}
+
+		projects = append(projects, ProjectEntry{
+			Repository:     repo,
+			LatestDate:     latestDate,
+			TotalCommits:   totalCommits,
+			ActivityTypes:  activityTypes,
+			RecentComments: comments,
+			URL:            url,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(projects)
+}
+
+func (app *App) getPRCommentsForRepo(repo string, limit int) ([]PRComment, error) {
+	rows, err := app.DB.Query(`
+		SELECT id, repository, pr_number, pr_title, author, body, created_at, pr_url, comment_url
+		FROM pr_comments
+		WHERE repository = ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, repo, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var comments []PRComment
+	for rows.Next() {
+		var comment PRComment
+		var createdAtStr string
+		err := rows.Scan(&comment.ID, &comment.Repository, &comment.PRNumber, &comment.PRTitle, 
+			&comment.Author, &comment.Body, &createdAtStr, &comment.PRURL, &comment.CommentURL)
+		if err != nil {
+			return nil, err
+		}
+		parsedTime, err := time.Parse(time.RFC3339, createdAtStr)
+		if err != nil {
+			// Log error and use current time as fallback
+			fmt.Printf("Warning: Failed to parse comment timestamp %s: %v\n", createdAtStr, err)
+			comment.CreatedAt = time.Now()
+		} else {
+			comment.CreatedAt = parsedTime
+		}
+		comments = append(comments, comment)
+	}
+
+	return comments, nil
+}
+
 func main() {
 	app := &App{
 		GitHubService: NewGitHubService(),
@@ -285,6 +451,7 @@ func main() {
 	r.HandleFunc("/", app.indexHandler)
 	r.HandleFunc("/api/activity", app.getActivityHandler)
 	r.HandleFunc("/api/commits", app.getCommitsHandler)
+	r.HandleFunc("/api/projects", app.getProjectsHandler)
 	r.HandleFunc("/api/refresh", app.refreshActivityHandler)
 	r.HandleFunc("/api/status", app.statusHandler)
 

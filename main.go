@@ -244,12 +244,53 @@ func (app *App) initDB() error {
 		if err != nil {
 			return fmt.Errorf("failed to add github_id column: %w", err)
 		}
+
+		// Clean up duplicates before creating the unique index
+		// Keep only the most recent entry for each unique combination
+		_, err = app.DB.Exec(`
+			DELETE FROM github_activity
+			WHERE id NOT IN (
+				SELECT MIN(id)
+				FROM github_activity
+				GROUP BY date, repository, activity_type, github_id
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to clean up duplicate entries: %w", err)
+		}
 	}
 
-	// Create the unique index (this will work whether the column was just added or already exists)
-	_, err = app.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id)`)
+	// Check if the unique index already exists
+	var indexExists bool
+	err = app.DB.QueryRow(`
+		SELECT COUNT(*) > 0
+		FROM sqlite_master
+		WHERE type = 'index' AND name = 'idx_unique_activity'
+	`).Scan(&indexExists)
 	if err != nil {
-		return fmt.Errorf("failed to create unique index: %w", err)
+		return fmt.Errorf("failed to check for unique index: %w", err)
+	}
+
+	// Only create the index if it doesn't exist
+	if !indexExists {
+		// Clean up any duplicates that might exist before creating the index
+		_, err = app.DB.Exec(`
+			DELETE FROM github_activity
+			WHERE id NOT IN (
+				SELECT MIN(id)
+				FROM github_activity
+				GROUP BY date, repository, activity_type, github_id
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to clean up duplicate entries: %w", err)
+		}
+
+		// Now create the unique index
+		_, err = app.DB.Exec(`CREATE UNIQUE INDEX idx_unique_activity ON github_activity(date, repository, activity_type, github_id)`)
+		if err != nil {
+			return fmt.Errorf("failed to create unique index: %w", err)
+		}
 	}
 
 	return nil

@@ -142,11 +142,9 @@ func (g *GitHubService) convertEventsToActivity(events []GitHubEvent) []GitHubAc
 				}
 			}
 		case "PushEvent":
-			// For push events, use the event ID as commits are already tracked separately
-			if commits, ok := event.Payload["commits"].([]interface{}); ok && len(commits) > 0 {
-				// Skip push events as we already track individual commits
-				continue
-			}
+			// Skip push events as we already track individual commits separately
+			// via the fetchRepoCommits function which provides more detailed information
+			continue
 		}
 
 		activities = append(activities, GitHubActivity{

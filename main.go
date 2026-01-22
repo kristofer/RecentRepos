@@ -198,13 +198,13 @@ func (app *App) initDB() error {
 		activity_type TEXT NOT NULL,
 		count INTEGER DEFAULT 1,
 		url TEXT,
-		github_id TEXT,
+		github_id TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	
 	CREATE INDEX IF NOT EXISTS idx_date ON github_activity(date);
 	CREATE INDEX IF NOT EXISTS idx_repo ON github_activity(repository);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id) WHERE github_id IS NOT NULL;
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id);
 
 	CREATE TABLE IF NOT EXISTS pr_comments (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -111,7 +111,9 @@ class RecentRepos {
                             ${entry.pull_requests.map(pr => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(pr.date)}</span>
-                                    <span>${pr.count} pull request${pr.count > 1 ? 's' : ''}</span>
+                                    <a href="${pr.url}" class="activity-link" target="_blank">
+                                        ${pr.count > 1 ? `${pr.count} pull requests` : 'Pull request'}
+                                    </a>
                                 </div>
                             `).join('')}
                         </div>
@@ -125,7 +127,9 @@ class RecentRepos {
                             ${entry.issues.map(issue => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(issue.date)}</span>
-                                    <span>${issue.count} issue${issue.count > 1 ? 's' : ''}</span>
+                                    <a href="${issue.url}" class="activity-link" target="_blank">
+                                        ${issue.count > 1 ? `${issue.count} issues` : 'Issue'}
+                                    </a>
                                 </div>
                             `).join('')}
                         </div>
@@ -139,7 +143,9 @@ class RecentRepos {
                             ${entry.commits.map(commit => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(commit.date)}</span>
-                                    <span>${commit.count} commit${commit.count > 1 ? 's' : ''}</span>
+                                    <a href="${commit.url}" class="activity-link" target="_blank">
+                                        ${commit.count > 1 ? `${commit.count} commits` : 'Commit'}
+                                    </a>
                                 </div>
                             `).join('')}
                         </div>

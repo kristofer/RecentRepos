@@ -26,6 +26,7 @@ type GitHubActivity struct {
 	ActivityType string    `json:"activity_type"`
 	Count        int       `json:"count"`
 	URL          string    `json:"url"`
+	GitHubID     string    `json:"github_id"` // Unique identifier from GitHub (SHA for commits, number for PRs/issues)
 }
 
 type PRComment struct {
@@ -92,7 +93,7 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get all commits data first, then group and paginate
 	rows, err := app.DB.Query(`
-		SELECT repository, date, url, count, activity_type
+		SELECT repository, date, url, count, activity_type, COALESCE(github_id, '') as github_id
 		FROM github_activity
 		WHERE activity_type = 'commit' AND date >= ?
 		ORDER BY date DESC, repository
@@ -106,9 +107,9 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 	// Group commits by repo
 	repoCommits := make(map[string][]GitHubActivity)
 	for rows.Next() {
-		var repo, dateStr, url, activityType string
+		var repo, dateStr, url, activityType, githubID string
 		var count int
-		err := rows.Scan(&repo, &dateStr, &url, &count, &activityType)
+		err := rows.Scan(&repo, &dateStr, &url, &count, &activityType, &githubID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -120,6 +121,7 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 			ActivityType: activityType,
 			Count:        count,
 			URL:          url,
+			GitHubID:     githubID,
 		}
 		repoCommits[repo] = append(repoCommits[repo], activity)
 	}
@@ -196,11 +198,13 @@ func (app *App) initDB() error {
 		activity_type TEXT NOT NULL,
 		count INTEGER DEFAULT 1,
 		url TEXT,
+		github_id TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	
 	CREATE INDEX IF NOT EXISTS idx_date ON github_activity(date);
 	CREATE INDEX IF NOT EXISTS idx_repo ON github_activity(repository);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id) WHERE github_id IS NOT NULL;
 
 	CREATE TABLE IF NOT EXISTS pr_comments (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,7 +233,7 @@ func (app *App) indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) getActivityHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.DB.Query(`
-		SELECT id, date, repository, activity_type, count, COALESCE(url, '') as url
+		SELECT id, date, repository, activity_type, count, COALESCE(url, '') as url, COALESCE(github_id, '') as github_id
 		FROM github_activity 
 		ORDER BY date DESC 
 		LIMIT 100
@@ -244,7 +248,7 @@ func (app *App) getActivityHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var activity GitHubActivity
 		var dateStr string
-		err := rows.Scan(&activity.ID, &dateStr, &activity.Repository, &activity.ActivityType, &activity.Count, &activity.URL)
+		err := rows.Scan(&activity.ID, &dateStr, &activity.Repository, &activity.ActivityType, &activity.Count, &activity.URL, &activity.GitHubID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -282,18 +286,12 @@ func (app *App) fetchGitHubActivity() error {
 		return fmt.Errorf("failed to fetch GitHub activity: %w", err)
 	}
 
-	// Clear existing data (optional - you might want to keep historical data)
-	_, err = app.DB.Exec("DELETE FROM github_activity WHERE date >= date('now', '-30 days')")
-	if err != nil {
-		return fmt.Errorf("failed to clear old activity: %w", err)
-	}
-
-	// Insert new activity data
+	// Insert new activity data, ignoring duplicates based on unique constraint
 	for _, activity := range activities {
 		_, err := app.DB.Exec(`
-			INSERT OR REPLACE INTO github_activity (date, repository, activity_type, count, url)
-			VALUES (?, ?, ?, ?, ?)
-		`, activity.Date.Format("2006-01-02"), activity.Repository, activity.ActivityType, activity.Count, activity.URL)
+			INSERT OR IGNORE INTO github_activity (date, repository, activity_type, count, url, github_id)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, activity.Date.Format("2006-01-02"), activity.Repository, activity.ActivityType, activity.Count, activity.URL, activity.GitHubID)
 		if err != nil {
 			return fmt.Errorf("failed to insert activity: %w", err)
 		}
@@ -413,7 +411,7 @@ func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
 	
 	// Get all activities from the database
 	rows, err := app.DB.Query(`
-		SELECT repository, date, activity_type, count, COALESCE(url, '') as url
+		SELECT repository, date, activity_type, count, COALESCE(url, '') as url, COALESCE(github_id, '') as github_id
 		FROM github_activity
 		WHERE date >= ?
 		ORDER BY date DESC
@@ -434,9 +432,9 @@ func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	for rows.Next() {
-		var repo, dateStr, activityType, url string
+		var repo, dateStr, activityType, url, githubID string
 		var count int
-		err := rows.Scan(&repo, &dateStr, &activityType, &count, &url)
+		err := rows.Scan(&repo, &dateStr, &activityType, &count, &url, &githubID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -449,6 +447,7 @@ func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
 			ActivityType: activityType,
 			Count:        count,
 			URL:          url,
+			GitHubID:     githubID,
 		}
 
 		repoData := repoActivities[repo]

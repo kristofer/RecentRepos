@@ -17,13 +17,17 @@
 
         <main>
             <div class="tabs">
-                <button class="tab-btn active" id="tab-activity">Recent Events</button>
+                <button class="tab-btn active" id="tab-blog">Blog View</button>
+                <button class="tab-btn" id="tab-activity">Recent Events</button>
                 <button class="tab-btn" id="tab-commits">6-Month Commits</button>
                 <button class="tab-btn" id="tab-projects">Project Blog</button>
             </div>
             <div id="loading" class="loading">Loading activity...</div>
             <div id="error" class="error" style="display: none;"></div>
-            <div id="activity-timeline" class="timeline tab-content active">
+            <div id="blog-timeline" class="timeline tab-content active">
+                <!-- Blog entries will be populated here -->
+            </div>
+            <div id="activity-timeline" class="timeline tab-content" style="display:none">
                 <!-- Activity items will be populated here -->
             </div>
             <div id="commits-timeline" class="timeline tab-content" style="display:none">

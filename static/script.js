@@ -3,6 +3,7 @@ class RecentRepos {
         this.activities = [];
         this.commitsData = [];
         this.projectsData = [];
+        this.blogData = [];
         this.currentCommitsPage = 1;
         this.commitsPerPage = 100;
         this.commitsPagination = null;
@@ -11,7 +12,7 @@ class RecentRepos {
 
     init() {
         this.loadStatus();
-        this.loadActivity();
+        this.loadBlog();
         this.setupEventListeners();
         this.setupTabs();
     }
@@ -22,27 +23,40 @@ class RecentRepos {
     }
 
     setupTabs() {
+        const tabBlog = document.getElementById('tab-blog');
         const tabActivity = document.getElementById('tab-activity');
         const tabCommits = document.getElementById('tab-commits');
         const tabProjects = document.getElementById('tab-projects');
+        const blogTimeline = document.getElementById('blog-timeline');
         const activityTimeline = document.getElementById('activity-timeline');
         const commitsTimeline = document.getElementById('commits-timeline');
         const projectsTimeline = document.getElementById('projects-timeline');
 
+        tabBlog.addEventListener('click', () => {
+            this.activateTab(tabBlog, [tabActivity, tabCommits, tabProjects]);
+            this.showContent(blogTimeline, [activityTimeline, commitsTimeline, projectsTimeline]);
+            if (this.blogData.length === 0) {
+                this.loadBlog();
+            }
+        });
+
         tabActivity.addEventListener('click', () => {
-            this.activateTab(tabActivity, [tabCommits, tabProjects]);
-            this.showContent(activityTimeline, [commitsTimeline, projectsTimeline]);
+            this.activateTab(tabActivity, [tabBlog, tabCommits, tabProjects]);
+            this.showContent(activityTimeline, [blogTimeline, commitsTimeline, projectsTimeline]);
+            if (this.activities.length === 0) {
+                this.loadActivity();
+            }
         });
 
         tabCommits.addEventListener('click', () => {
-            this.activateTab(tabCommits, [tabActivity, tabProjects]);
-            this.showContent(commitsTimeline, [activityTimeline, projectsTimeline]);
+            this.activateTab(tabCommits, [tabBlog, tabActivity, tabProjects]);
+            this.showContent(commitsTimeline, [blogTimeline, activityTimeline, projectsTimeline]);
             this.loadCommits(1);
         });
 
         tabProjects.addEventListener('click', () => {
-            this.activateTab(tabProjects, [tabActivity, tabCommits]);
-            this.showContent(projectsTimeline, [activityTimeline, commitsTimeline]);
+            this.activateTab(tabProjects, [tabBlog, tabActivity, tabCommits]);
+            this.showContent(projectsTimeline, [blogTimeline, activityTimeline, commitsTimeline]);
             this.loadProjects();
         });
     }
@@ -60,6 +74,83 @@ class RecentRepos {
             content.classList.remove('active');
         });
     }
+    async loadBlog() {
+        const blogTimeline = document.getElementById('blog-timeline');
+        blogTimeline.innerHTML = '<div class="loading">Loading blog view...</div>';
+        
+        try {
+            const response = await fetch('/api/blog');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.blogData = await response.json();
+            this.renderBlog();
+        } catch (error) {
+            blogTimeline.innerHTML = `<div class="error">Failed to load blog view: ${error.message}</div>`;
+        }
+    }
+
+    renderBlog() {
+        const blogTimeline = document.getElementById('blog-timeline');
+        if (!this.blogData || this.blogData.length === 0) {
+            blogTimeline.innerHTML = '<div class="blog-entry">No blog data available. Click "Refresh Activity" to fetch your GitHub activity.</div>';
+            return;
+        }
+
+        const content = this.blogData.map(entry => `
+            <div class="blog-entry">
+                <div class="blog-header">
+                    <a href="${entry.url}" class="blog-repo-name" target="_blank">${entry.repository}</a>
+                    <span class="blog-date">${this.formatDate(entry.latest_date)}</span>
+                </div>
+                
+                ${entry.pull_requests && entry.pull_requests.length > 0 ? `
+                    <div class="activity-section">
+                        <h4 class="activity-section-title">📝 Pull Requests</h4>
+                        <div class="activity-list">
+                            ${entry.pull_requests.map(pr => `
+                                <div class="activity-list-item">
+                                    <span class="activity-date">${this.formatDate(pr.date)}</span>
+                                    <span>${pr.count} pull request${pr.count > 1 ? 's' : ''}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                ${entry.issues && entry.issues.length > 0 ? `
+                    <div class="activity-section">
+                        <h4 class="activity-section-title">🔧 Issues</h4>
+                        <div class="activity-list">
+                            ${entry.issues.map(issue => `
+                                <div class="activity-list-item">
+                                    <span class="activity-date">${this.formatDate(issue.date)}</span>
+                                    <span>${issue.count} issue${issue.count > 1 ? 's' : ''}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                ${entry.commits && entry.commits.length > 0 ? `
+                    <div class="activity-section">
+                        <h4 class="activity-section-title">💻 Commits</h4>
+                        <div class="activity-list">
+                            ${entry.commits.map(commit => `
+                                <div class="activity-list-item">
+                                    <span class="activity-date">${this.formatDate(commit.date)}</span>
+                                    <span>${commit.count} commit${commit.count > 1 ? 's' : ''}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+
+        blogTimeline.innerHTML = content;
+    }
+
     async loadCommits(page = 1) {
         const commitsTimeline = document.getElementById('commits-timeline');
         if (page === 1) {
@@ -229,7 +320,8 @@ class RecentRepos {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            await this.loadActivity();
+            // Reload all views in parallel
+            await Promise.all([this.loadBlog(), this.loadActivity()]);
         } catch (error) {
             this.showError('Failed to refresh activity: ' + error.message);
         } finally {

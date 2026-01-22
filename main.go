@@ -190,6 +190,7 @@ func (app *App) initDB() error {
 	app.DB.SetMaxIdleConns(5)
 	app.DB.SetConnMaxLifetime(5 * time.Minute)
 
+	// Create tables without the unique index initially
 	createTableSQL := `
 	CREATE TABLE IF NOT EXISTS github_activity (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,13 +199,11 @@ func (app *App) initDB() error {
 		activity_type TEXT NOT NULL,
 		count INTEGER DEFAULT 1,
 		url TEXT,
-		github_id TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	
 	CREATE INDEX IF NOT EXISTS idx_date ON github_activity(date);
 	CREATE INDEX IF NOT EXISTS idx_repo ON github_activity(repository);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id);
 
 	CREATE TABLE IF NOT EXISTS pr_comments (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,7 +223,36 @@ func (app *App) initDB() error {
 	`
 
 	_, err = app.DB.Exec(createTableSQL)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: Add github_id column if it doesn't exist
+	var columnExists bool
+	err = app.DB.QueryRow(`
+		SELECT COUNT(*) > 0 
+		FROM pragma_table_info('github_activity') 
+		WHERE name = 'github_id'
+	`).Scan(&columnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check for github_id column: %w", err)
+	}
+
+	if !columnExists {
+		// Add the github_id column to existing table
+		_, err = app.DB.Exec(`ALTER TABLE github_activity ADD COLUMN github_id TEXT NOT NULL DEFAULT ''`)
+		if err != nil {
+			return fmt.Errorf("failed to add github_id column: %w", err)
+		}
+	}
+
+	// Create the unique index (this will work whether the column was just added or already exists)
+	_, err = app.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_activity ON github_activity(date, repository, activity_type, github_id)`)
+	if err != nil {
+		return fmt.Errorf("failed to create unique index: %w", err)
+	}
+
+	return nil
 }
 
 func (app *App) indexHandler(w http.ResponseWriter, r *http.Request) {

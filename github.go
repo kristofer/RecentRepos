@@ -13,10 +13,11 @@ type GitHubService struct {
 }
 
 type GitHubEvent struct {
-	Type      string      `json:"type"`
-	Repo      GitHubRepo  `json:"repo"`
-	CreatedAt time.Time   `json:"created_at"`
-	Payload   interface{} `json:"payload"`
+	ID        string                 `json:"id"`
+	Type      string                 `json:"type"`
+	Repo      GitHubRepo             `json:"repo"`
+	CreatedAt time.Time              `json:"created_at"`
+	Payload   map[string]interface{} `json:"payload"`
 }
 
 type GitHubRepo struct {
@@ -113,28 +114,47 @@ func (g *GitHubService) FetchUserActivity(username string) ([]GitHubActivity, er
 }
 
 func (g *GitHubService) convertEventsToActivity(events []GitHubEvent) []GitHubActivity {
-	activityMap := make(map[string]*GitHubActivity)
+	var activities []GitHubActivity
 
 	for _, event := range events {
-		date := event.CreatedAt.Format("2006-01-02")
-		key := fmt.Sprintf("%s-%s-%s", date, event.Repo.Name, g.getActivityType(event.Type))
-
-		if activity, exists := activityMap[key]; exists {
-			activity.Count++
-		} else {
-			activityMap[key] = &GitHubActivity{
-				Date:         event.CreatedAt,
-				Repository:   event.Repo.Name,
-				ActivityType: g.getActivityType(event.Type),
-				Count:        1,
-				URL:          fmt.Sprintf("https://github.com/%s", event.Repo.Name),
+		activityType := g.getActivityType(event.Type)
+		githubID := event.ID
+		url := fmt.Sprintf("https://github.com/%s", event.Repo.Name)
+		
+		// Extract specific IDs and URLs from payload based on event type
+		switch event.Type {
+		case "PullRequestEvent":
+			if pr, ok := event.Payload["pull_request"].(map[string]interface{}); ok {
+				if number, ok := pr["number"].(float64); ok {
+					githubID = fmt.Sprintf("pr-%d", int(number))
+					if htmlURL, ok := pr["html_url"].(string); ok {
+						url = htmlURL
+					}
+				}
 			}
+		case "IssuesEvent":
+			if issue, ok := event.Payload["issue"].(map[string]interface{}); ok {
+				if number, ok := issue["number"].(float64); ok {
+					githubID = fmt.Sprintf("issue-%d", int(number))
+					if htmlURL, ok := issue["html_url"].(string); ok {
+						url = htmlURL
+					}
+				}
+			}
+		case "PushEvent":
+			// Skip push events as we already track individual commits separately
+			// via the fetchRepoCommits function which provides more detailed information
+			continue
 		}
-	}
 
-	var activities []GitHubActivity
-	for _, activity := range activityMap {
-		activities = append(activities, *activity)
+		activities = append(activities, GitHubActivity{
+			Date:         event.CreatedAt,
+			Repository:   event.Repo.Name,
+			ActivityType: activityType,
+			Count:        1,
+			URL:          url,
+			GitHubID:     githubID,
+		})
 	}
 
 	return activities
@@ -281,26 +301,17 @@ func (g *GitHubService) fetchRecentEvents(username string) ([]GitHubEvent, error
 }
 
 func (g *GitHubService) convertCommitsToActivity(commits []GitHubCommit, repoName, username string) []GitHubActivity {
-	// Group commits by date
-	commitsByDate := make(map[string]int)
-	commitDates := make(map[string]time.Time)
+	// Store each commit individually with its unique SHA
+	var activities []GitHubActivity
 	
 	for _, commit := range commits {
-		dateStr := commit.Commit.Author.Date.Format("2006-01-02")
-		commitsByDate[dateStr]++
-		if _, exists := commitDates[dateStr]; !exists {
-			commitDates[dateStr] = commit.Commit.Author.Date
-		}
-	}
-
-	var activities []GitHubActivity
-	for dateStr, count := range commitsByDate {
 		activities = append(activities, GitHubActivity{
-			Date:         commitDates[dateStr],
+			Date:         commit.Commit.Author.Date,
 			Repository:   fmt.Sprintf("%s/%s", username, repoName),
 			ActivityType: "commit",
-			Count:        count,
-			URL:          fmt.Sprintf("https://github.com/%s/%s", username, repoName),
+			Count:        1,
+			URL:          commit.URL,
+			GitHubID:     commit.SHA,
 		})
 	}
 
@@ -335,29 +346,65 @@ func (g *GitHubService) getSampleData() []GitHubActivity {
 			Date:         now.AddDate(0, 0, -1),
 			Repository:   "kristofer/RecentRepos",
 			ActivityType: "commit",
-			Count:        3,
-			URL:          "https://github.com/kristofer/RecentRepos",
+			Count:        1,
+			URL:          "https://github.com/kristofer/RecentRepos/commit/abc123",
+			GitHubID:     "abc123",
+		},
+		{
+			Date:         now.AddDate(0, 0, -1),
+			Repository:   "kristofer/RecentRepos",
+			ActivityType: "commit",
+			Count:        1,
+			URL:          "https://github.com/kristofer/RecentRepos/commit/def456",
+			GitHubID:     "def456",
+		},
+		{
+			Date:         now.AddDate(0, 0, -1),
+			Repository:   "kristofer/RecentRepos",
+			ActivityType: "commit",
+			Count:        1,
+			URL:          "https://github.com/kristofer/RecentRepos/commit/ghi789",
+			GitHubID:     "ghi789",
 		},
 		{
 			Date:         now.AddDate(0, 0, -2),
 			Repository:   "kristofer/example-project",
 			ActivityType: "pull_request",
 			Count:        1,
-			URL:          "https://github.com/kristofer/example-project",
+			URL:          "https://github.com/kristofer/example-project/pull/42",
+			GitHubID:     "pr-42",
 		},
 		{
 			Date:         now.AddDate(0, 0, -3),
 			Repository:   "kristofer/another-repo",
 			ActivityType: "commit",
-			Count:        5,
-			URL:          "https://github.com/kristofer/another-repo",
+			Count:        1,
+			URL:          "https://github.com/kristofer/another-repo/commit/jkl012",
+			GitHubID:     "jkl012",
+		},
+		{
+			Date:         now.AddDate(0, 0, -3),
+			Repository:   "kristofer/another-repo",
+			ActivityType: "commit",
+			Count:        1,
+			URL:          "https://github.com/kristofer/another-repo/commit/mno345",
+			GitHubID:     "mno345",
 		},
 		{
 			Date:         now.AddDate(0, 0, -5),
 			Repository:   "kristofer/web-app",
 			ActivityType: "issue",
-			Count:        2,
-			URL:          "https://github.com/kristofer/web-app",
+			Count:        1,
+			URL:          "https://github.com/kristofer/web-app/issues/15",
+			GitHubID:     "issue-15",
+		},
+		{
+			Date:         now.AddDate(0, 0, -5),
+			Repository:   "kristofer/web-app",
+			ActivityType: "issue",
+			Count:        1,
+			URL:          "https://github.com/kristofer/web-app/issues/16",
+			GitHubID:     "issue-16",
 		},
 		{
 			Date:         now.AddDate(0, 0, -7),
@@ -365,13 +412,15 @@ func (g *GitHubService) getSampleData() []GitHubActivity {
 			ActivityType: "review",
 			Count:        1,
 			URL:          "https://github.com/kristofer/RecentRepos",
+			GitHubID:     "review-1",
 		},
 		{
 			Date:         now.AddDate(0, 0, -10),
 			Repository:   "kristofer/mobile-app",
 			ActivityType: "commit",
-			Count:        8,
-			URL:          "https://github.com/kristofer/mobile-app",
+			Count:        1,
+			URL:          "https://github.com/kristofer/mobile-app/commit/pqr678",
+			GitHubID:     "pqr678",
 		},
 	}
 }

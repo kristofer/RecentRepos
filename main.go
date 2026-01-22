@@ -465,10 +465,12 @@ func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
 			repoData.pullRequests = append(repoData.pullRequests, activity)
 		case "issue":
 			repoData.issues = append(repoData.issues, activity)
-		case "commit":
+		case "commit", "review", "repository", "fork", "star", "activity":
+			// All commit-like activities go into commits section
 			repoData.commits = append(repoData.commits, activity)
 		default:
-			// Add other activity types to commits for now
+			// Log unknown activity types for debugging
+			fmt.Printf("Unknown activity type '%s' found for repo %s, adding to commits\n", activityType, repo)
 			repoData.commits = append(repoData.commits, activity)
 		}
 

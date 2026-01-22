@@ -320,9 +320,8 @@ class RecentRepos {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            // Reload all views
-            await this.loadBlog();
-            await this.loadActivity();
+            // Reload all views in parallel
+            await Promise.all([this.loadBlog(), this.loadActivity()]);
         } catch (error) {
             this.showError('Failed to refresh activity: ' + error.message);
         } finally {

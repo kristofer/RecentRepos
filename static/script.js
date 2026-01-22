@@ -111,9 +111,9 @@ class RecentRepos {
                             ${entry.pull_requests.map(pr => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(pr.date)}</span>
-                                    <a href="${pr.url}" class="activity-link" target="_blank">
+                                    ${pr.url ? `<a href="${pr.url}" class="activity-link" target="_blank">
                                         ${pr.count > 1 ? `${pr.count} pull requests` : 'Pull request'}
-                                    </a>
+                                    </a>` : `<span>${pr.count > 1 ? `${pr.count} pull requests` : 'Pull request'}</span>`}
                                 </div>
                             `).join('')}
                         </div>
@@ -127,9 +127,9 @@ class RecentRepos {
                             ${entry.issues.map(issue => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(issue.date)}</span>
-                                    <a href="${issue.url}" class="activity-link" target="_blank">
+                                    ${issue.url ? `<a href="${issue.url}" class="activity-link" target="_blank">
                                         ${issue.count > 1 ? `${issue.count} issues` : 'Issue'}
-                                    </a>
+                                    </a>` : `<span>${issue.count > 1 ? `${issue.count} issues` : 'Issue'}</span>`}
                                 </div>
                             `).join('')}
                         </div>
@@ -143,9 +143,9 @@ class RecentRepos {
                             ${entry.commits.map(commit => `
                                 <div class="activity-list-item">
                                     <span class="activity-date">${this.formatDate(commit.date)}</span>
-                                    <a href="${commit.url}" class="activity-link" target="_blank">
+                                    ${commit.url ? `<a href="${commit.url}" class="activity-link" target="_blank">
                                         ${commit.count > 1 ? `${commit.count} commits` : 'Commit'}
-                                    </a>
+                                    </a>` : `<span>${commit.count > 1 ? `${commit.count} commits` : 'Commit'}</span>`}
                                 </div>
                             `).join('')}
                         </div>

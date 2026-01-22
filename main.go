@@ -49,6 +49,15 @@ type ProjectEntry struct {
 	URL           string      `json:"url"`
 }
 
+type BlogEntry struct {
+	Repository   string           `json:"repository"`
+	LatestDate   time.Time        `json:"latest_date"`
+	URL          string           `json:"url"`
+	PullRequests []GitHubActivity `json:"pull_requests"`
+	Issues       []GitHubActivity `json:"issues"`
+	Commits      []GitHubActivity `json:"commits"`
+}
+
 // Handler for /api/commits: returns last 6 months of commits grouped by repo, ordered by most recent commit per repo
 func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get pagination parameters
@@ -398,6 +407,96 @@ func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(projects)
 }
 
+// Handler for /api/blog: returns blog-style listing grouped by repository with all activity types
+func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
+	
+	// Get all activities from the database
+	rows, err := app.DB.Query(`
+		SELECT repository, date, activity_type, count, COALESCE(url, '') as url
+		FROM github_activity
+		WHERE date >= ?
+		ORDER BY date DESC
+	`, sixMonthsAgo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	// Group activities by repository
+	repoActivities := make(map[string]struct {
+		latestDate   time.Time
+		url          string
+		pullRequests []GitHubActivity
+		issues       []GitHubActivity
+		commits      []GitHubActivity
+	})
+
+	for rows.Next() {
+		var repo, dateStr, activityType, url string
+		var count int
+		err := rows.Scan(&repo, &dateStr, &activityType, &count, &url)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		date, _ := time.Parse("2006-01-02", dateStr)
+		activity := GitHubActivity{
+			Date:         date,
+			Repository:   repo,
+			ActivityType: activityType,
+			Count:        count,
+			URL:          url,
+		}
+
+		repoData := repoActivities[repo]
+		if repoData.latestDate.IsZero() || date.After(repoData.latestDate) {
+			repoData.latestDate = date
+		}
+		if repoData.url == "" {
+			repoData.url = url
+		}
+
+		// Group by activity type
+		switch activityType {
+		case "pull_request":
+			repoData.pullRequests = append(repoData.pullRequests, activity)
+		case "issue":
+			repoData.issues = append(repoData.issues, activity)
+		case "commit":
+			repoData.commits = append(repoData.commits, activity)
+		default:
+			// Add other activity types to commits for now
+			repoData.commits = append(repoData.commits, activity)
+		}
+
+		repoActivities[repo] = repoData
+	}
+
+	// Convert to BlogEntry slice
+	var blogEntries []BlogEntry
+	for repo, data := range repoActivities {
+		blogEntries = append(blogEntries, BlogEntry{
+			Repository:   repo,
+			LatestDate:   data.latestDate,
+			URL:          data.url,
+			PullRequests: data.pullRequests,
+			Issues:       data.issues,
+			Commits:      data.commits,
+		})
+	}
+
+	// Sort by most recent activity
+	sort.Slice(blogEntries, func(i, j int) bool {
+		return blogEntries[i].LatestDate.After(blogEntries[j].LatestDate)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(blogEntries)
+}
+
 func (app *App) getPRCommentsForRepo(repo string, limit int) ([]PRComment, error) {
 	rows, err := app.DB.Query(`
 		SELECT id, repository, pr_number, pr_title, author, body, created_at, pr_url, comment_url
@@ -452,6 +551,7 @@ func main() {
 	r.HandleFunc("/api/activity", app.getActivityHandler)
 	r.HandleFunc("/api/commits", app.getCommitsHandler)
 	r.HandleFunc("/api/projects", app.getProjectsHandler)
+	r.HandleFunc("/api/blog", app.getBlogHandler)
 	r.HandleFunc("/api/refresh", app.refreshActivityHandler)
 	r.HandleFunc("/api/status", app.statusHandler)
 

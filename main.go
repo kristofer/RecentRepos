@@ -42,12 +42,12 @@ type PRComment struct {
 }
 
 type ProjectEntry struct {
-	Repository    string      `json:"repository"`
-	LatestDate    time.Time   `json:"latest_date"`
-	TotalCommits  int         `json:"total_commits"`
-	ActivityTypes []string    `json:"activity_types"`
+	Repository     string      `json:"repository"`
+	LatestDate     time.Time   `json:"latest_date"`
+	TotalCommits   int         `json:"total_commits"`
+	ActivityTypes  []string    `json:"activity_types"`
 	RecentComments []PRComment `json:"recent_comments"`
-	URL           string      `json:"url"`
+	URL            string      `json:"url"`
 }
 
 type BlogEntry struct {
@@ -64,13 +64,13 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get pagination parameters
 	page := 1
 	limit := 100
-	
+
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
 			page = p
 		}
 	}
-	
+
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
 			limit = l
@@ -78,7 +78,7 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
-	
+
 	// First, get total count of repositories with commits
 	var totalRepos int
 	err := app.DB.QueryRow(`
@@ -143,7 +143,7 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	
+
 	// Sort repos by most recent commit date (descending)
 	sort.Slice(allRepoGroups, func(i, j int) bool {
 		return allRepoGroups[i].LatestDate.After(allRepoGroups[j].LatestDate)
@@ -165,12 +165,12 @@ func (app *App) getCommitsHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"data": paginatedRepoGroups,
 		"pagination": map[string]interface{}{
-			"page":         page,
-			"limit":        limit,
-			"total":        len(allRepoGroups),
-			"total_pages":  (len(allRepoGroups) + limit - 1) / limit,
-			"has_next":     end < len(allRepoGroups),
-			"has_prev":     page > 1,
+			"page":        page,
+			"limit":       limit,
+			"total":       len(allRepoGroups),
+			"total_pages": (len(allRepoGroups) + limit - 1) / limit,
+			"has_next":    end < len(allRepoGroups),
+			"has_prev":    page > 1,
 		},
 	}
 
@@ -384,7 +384,7 @@ func (app *App) fetchGitHubActivity() error {
 				INSERT OR REPLACE INTO pr_comments 
 				(repository, pr_number, pr_title, author, body, created_at, pr_url, comment_url)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			`, comment.Repository, comment.PRNumber, comment.PRTitle, comment.Author, 
+			`, comment.Repository, comment.PRNumber, comment.PRTitle, comment.Author,
 				comment.Body, comment.CreatedAt.Format(time.RFC3339), comment.PRURL, comment.CommentURL)
 			if err != nil {
 				fmt.Printf("Warning: Failed to insert PR comment: %v\n", err)
@@ -416,7 +416,7 @@ func (app *App) statusHandler(w http.ResponseWriter, r *http.Request) {
 // Handler for /api/projects: returns blog-style listing of projects with recent PR comments
 func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
-	
+
 	// Get all repositories with activity
 	rows, err := app.DB.Query(`
 		SELECT repository, MAX(date) as latest_date, 
@@ -445,7 +445,7 @@ func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		latestDate, _ := time.Parse("2006-01-02", latestDateStr)
-		
+
 		// Split activity types
 		var activityTypes []string
 		if activityTypesStr != "" {
@@ -477,7 +477,7 @@ func (app *App) getProjectsHandler(w http.ResponseWriter, r *http.Request) {
 // Handler for /api/blog: returns blog-style listing grouped by repository with all activity types
 func (app *App) getBlogHandler(w http.ResponseWriter, r *http.Request) {
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
-	
+
 	// Get all activities from the database
 	rows, err := app.DB.Query(`
 		SELECT repository, date, activity_type, count, COALESCE(url, '') as url, COALESCE(github_id, '') as github_id
@@ -584,7 +584,7 @@ func (app *App) getPRCommentsForRepo(repo string, limit int) ([]PRComment, error
 	for rows.Next() {
 		var comment PRComment
 		var createdAtStr string
-		err := rows.Scan(&comment.ID, &comment.Repository, &comment.PRNumber, &comment.PRTitle, 
+		err := rows.Scan(&comment.ID, &comment.Repository, &comment.PRNumber, &comment.PRTitle,
 			&comment.Author, &comment.Body, &createdAtStr, &comment.PRURL, &comment.CommentURL)
 		if err != nil {
 			return nil, err
